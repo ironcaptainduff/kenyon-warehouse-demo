@@ -295,6 +295,18 @@
   }
   .tplTable { margin-top: 10px; }
   .tplTable td, .tplTable th { padding: 6px 8px; }
+  /* ---------- Welcome tour ---------- */
+  .tourRow {
+    display: flex; gap: 14px; align-items: center; width: 100%; text-align: left;
+    background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    padding: 13px 16px; margin-top: 10px; cursor: pointer;
+  }
+  .tourRow:hover { border-color: var(--blue); background: var(--blue-soft); }
+  .tourIcon { font-size: 22px; }
+  .tourRow strong { display: block; font-size: 14px; color: var(--navy); }
+  .tourRow p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .tourGo { margin-left: auto; color: var(--blue); font-weight: 700; white-space: nowrap; font-size: 13px; }
+  .tourFoot { margin-top: 16px; font-size: 12px; color: var(--muted); line-height: 1.6; }
   /* ---------- Valuation chart ---------- */
   .valChart {
     display: flex; gap: 18px; align-items: flex-end;
@@ -328,6 +340,7 @@
       <option value="admin">&#128100; Administrator</option>
       <option value="staff">&#128100; Warehouse staff</option>
     </select>
+    <button class="ghostButton" onclick="openTour()">&#10024; Tour</button>
     <button class="ghostButton" onclick="openPhoneDemo()">&#128241; How to scan</button>
     <button class="ghostButton" id="resetBtn" onclick="resetDemo()">Reset demo data</button>
   </div>
@@ -345,6 +358,7 @@
 
 <div id="modalRoot"></div>
 <div id="dialogRoot"></div>
+<input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="handleCsvFile(this.files[0]); this.value='';">
 
 <script>
 /* =============================================================
@@ -738,7 +752,7 @@ function render() {
     '<h3 style="font-size:18px">' + esc(wh().label) + '</h3>' +
     '<p class="muted">' + (S.whId === 'bracknell'
       ? 'Seeded with ' + S.items.length + ' representative line items sampled from the 2026 Operations Property Book (full system holds 6,318). Search, check items, update expiries, charge out to incidents, replenish — everything persists locally in your browser.'
-      : 'Houston warehouse — starts empty in this demo. Add items manually or register them via Scan & Action.') + '</p>';
+      : 'Houston warehouse — starts empty in this demo. Import an existing spreadsheet (Inventory → Import spreadsheet), add items manually, or register them via Scan & Action.') + '</p>';
   // tabs
   document.getElementById('tabsBar').innerHTML = TABS.map(t =>
     '<button class="tab' + (S.tab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>').join('');
@@ -886,6 +900,7 @@ function renderInventory() {
     '</div>' +
     '<div class="tableActions">' +
     '<button class="primaryButton" onclick="handleAddItem()">+ Add Item</button>' +
+    (isAdmin() ? '<button class="outlineButton" onclick="document.getElementById(\'csvFileInput\').click()" title="Migrate stock lines from an existing spreadsheet (CSV)">⇪ Import spreadsheet (CSV)</button>' : '') +
     '<button class="outlineButton" onclick="exportCsv()">Export CSV</button>' +
     '<span class="muted">' + filtered.length + ' of ' + S.items.length + ' items · page ' + S.page + ' of ' + totalPages + ' · click a row to edit / action</span>' +
     '</div>' +
@@ -1421,8 +1436,8 @@ function renderValuation() {
   return (
     '<div class="statGrid" style="margin-bottom:16px">' +
     '<button class="statTile" disabled><p class="statLabel">Bracknell (UK)</p><p class="statValue">' + fmt(bVal) + '</p><p class="statSub">on-hand replacement cost</p></button>' +
-    '<button class="statTile" disabled><p class="statLabel">Houston (US)</p><p class="statValue">' + (hVal > 0 ? fmt(hVal) : '—') + '</p><p class="statSub">' + (hVal > 0 ? 'on-hand replacement cost' : 'not yet stocked in demo') + '</p></button>' +
-    '<button class="statTile" disabled style="border-color:var(--blue)"><p class="statLabel">Consolidated</p><p class="statValue" style="color:var(--blue)">' + fmt(bVal + hVal) + '</p><p class="statSub">both warehouses</p></button>' +
+    '<button class="statTile" disabled><p class="statLabel">Houston (US)</p><p class="statValue">' + (hVal > 0 ? '$' + Math.round(hVal).toLocaleString() : '—') + '</p><p class="statSub">' + (hVal > 0 ? 'on-hand replacement cost' : 'not yet stocked in demo') + '</p></button>' +
+    '<button class="statTile" disabled style="border-color:var(--blue)"><p class="statLabel">Consolidated</p><p class="statValue" style="color:var(--blue)">' + fmt(bVal + hVal) + '</p><p class="statSub">both warehouses' + (hVal > 0 ? ' · USD counted 1:1 in this demo' : '') + '</p></button>' +
     '</div>' +
 
     '<div class="card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
@@ -1443,6 +1458,165 @@ function renderValuation() {
       '<td>' + fmt(v.value) + '</td><td>' + (curVal > 0 ? (v.value / curVal * 100).toFixed(1) + '%' : '—') + '</td></tr>').join('') +
     '</tbody></table></div></div>'
   );
+}
+
+/* ----- welcome tour (shown once to first-time visitors) ----- */
+function openTour() {
+  try { localStorage.setItem('whdemo_tourSeen', '1'); } catch (e) {}
+  const row = (icon, title, body, tab) =>
+    '<button class="tourRow" onclick="tourGo(\'' + tab + '\')">' +
+    '<span class="tourIcon">' + icon + '</span>' +
+    '<span><strong>' + title + '</strong><p>' + body + '</p></span>' +
+    '<span class="tourGo">Try it →</span></button>';
+  document.getElementById('modalRoot').innerHTML =
+    '<div class="modalOverlay" onclick="if(event.target===this)closeTour()"><div class="modal" style="width:min(560px,100%)">' +
+    '<p class="eyebrow">Welcome · 2-minute tour</p>' +
+    '<h2 style="color:var(--navy);margin:4px 0 6px">Kenyon Warehouse Management</h2>' +
+    '<p class="muted">A working demonstration of the proposed deployable-stock tool. Pick anything below — you can\'t break it.</p>' +
+    row('📋', 'Generate &amp; issue a pick list', 'Choose an activation size — the system proposes items from stock, nearest expiry first. Issuing deducts stock and writes the audit trail.', 'picklists') +
+    row('📈', 'Live valuation', 'Per-warehouse and consolidated stock value, snapshot history, and CSV exports for finance.', 'valuation') +
+    row('⌕', 'Scan &amp; action', 'Look up a barcode, then charge out, replenish, or mark inspected. Click a sample barcode to try.', 'scan') +
+    row('⏰', 'Expiry monitoring', 'Red / amber / green expiry banding plus overdue-inspection reminders.', 'expiries') +
+    '<p class="tourFoot">All data is illustrative and stored only in your browser — nobody else sees your changes. ' +
+    'Switch between <strong>Administrator</strong> and <strong>Warehouse staff</strong> in the top bar to see role permissions. Reopen this any time with ✨ Tour.</p>' +
+    '<div class="actionsRow" style="margin:14px 0 0"><button class="outlineButton" onclick="closeTour()">Explore on my own</button></div>' +
+    '</div></div>';
+}
+function tourGo(tab) { closeTour(); setTab(tab); }
+function closeTour() { document.getElementById('modalRoot').innerHTML = ''; }
+
+/* ----- CSV import (finance proposal: migrate data from the existing spreadsheet) ----- */
+const COL_SYNONYMS = {
+  description: ['description', 'item description', 'item', 'name', 'product'],
+  onHand: ['on hand', 'onhand', 'qty', 'quantity', 'stock', 'count', 'units'],
+  costPerItem: ['cost', 'unit cost', 'cost per item', 'price', 'unit price', 'purchase cost'],
+  expiry: ['expiry', 'expiry date', 'expires', 'expiration', 'use by'],
+  kit: ['kit', 'kit category', 'category', 'group'],
+  box: ['box', 'container', 'box / container'],
+  supplier: ['supplier', 'vendor'],
+  location: ['location', 'loc'],
+  stockTarget: ['target', 'stock target', 'min', 'minimum', 'reorder level'],
+  unitOfIssue: ['unit of issue', 'unit', 'uom'],
+  reorderCode: ['reorder code', 'sku', 'item code', 'code'],
+};
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.some(f => f.trim() !== '')) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.some(f => f.trim() !== '')) rows.push(row);
+  return rows;
+}
+function mapCsvColumns(headerRow) {
+  const map = {};
+  headerRow.forEach((h, i) => {
+    const norm = h.trim().toLowerCase();
+    for (const [field, names] of Object.entries(COL_SYNONYMS)) {
+      if (map[field] === undefined && names.includes(norm)) map[field] = i;
+    }
+  });
+  return map;
+}
+function handleCsvFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseCsv(String(reader.result));
+    if (rows.length < 2) { showCsvError('The file needs a header row plus at least one data row.'); return; }
+    const map = mapCsvColumns(rows[0]);
+    if (map.description === undefined) {
+      showCsvError('Couldn’t find an item description column. Include a header like "Description", "Item" or "Name". Found headers: ' + rows[0].join(', '));
+      return;
+    }
+    const records = rows.slice(1).map(r => ({
+      description: (r[map.description] || '').trim(),
+      onHand: Number(r[map.onHand]) || 0,
+      costPerItem: Number(String(r[map.costPerItem] || '').replace(/[£$,]/g, '')) || 0,
+      expiry: (r[map.expiry] || '').trim(),
+      kit: (r[map.kit] || 'Imported').trim() || 'Imported',
+      box: (r[map.box] || '').trim(),
+      supplier: (r[map.supplier] || '').trim(),
+      location: (r[map.location] || '').trim(),
+      stockTarget: Number(r[map.stockTarget]) || 0,
+      unitOfIssue: (r[map.unitOfIssue] || '').trim(),
+      reorderCode: (r[map.reorderCode] || '').trim(),
+    })).filter(r => r.description);
+    if (!records.length) { showCsvError('No usable rows found (every row needs a description).'); return; }
+    showCsvPreview(file.name, rows[0], map, records);
+  };
+  reader.readAsText(file);
+}
+function showCsvError(msg) {
+  const root = document.getElementById('dialogRoot');
+  root.innerHTML =
+    '<div class="modalOverlay" style="z-index:80"><div class="modal" style="width:min(460px,100%)">' +
+    '<h3 style="margin-bottom:6px">Import problem</h3>' +
+    '<p class="muted" style="margin-bottom:12px">' + esc(msg) + '</p>' +
+    '<div class="actionsRow" style="margin:0">' +
+    '<button class="primaryButton" onclick="document.getElementById(\'dialogRoot\').innerHTML=\'\'">OK</button>' +
+    '<button class="outlineButton" onclick="downloadCsvTemplate()">Download a template CSV</button>' +
+    '</div></div></div>';
+}
+let pendingImport = null;
+function showCsvPreview(filename, headers, map, records) {
+  pendingImport = { filename, records };
+  const mapped = Object.entries(map).map(([f, i]) => '"' + esc(headers[i]) + '" → ' + f).join(' · ');
+  const root = document.getElementById('dialogRoot');
+  root.innerHTML =
+    '<div class="modalOverlay" style="z-index:80"><div class="modal" style="width:min(620px,100%)">' +
+    '<h3 style="margin-bottom:6px">Import from spreadsheet</h3>' +
+    '<p class="muted" style="margin-bottom:10px"><strong>' + esc(filename) + '</strong> — ' + records.length + ' items ready to import into ' + esc(wh().label) + '.</p>' +
+    '<p class="muted small" style="margin-bottom:10px">Detected columns: ' + mapped + '</p>' +
+    '<div class="tableScroll" style="max-height:220px;overflow-y:auto"><table><thead><tr><th>Description</th><th>Qty</th><th>Cost</th><th>Expiry</th><th>Kit</th></tr></thead><tbody>' +
+    records.slice(0, 8).map(r => '<tr><td>' + esc(r.description) + '</td><td>' + r.onHand + '</td><td>' + r.costPerItem + '</td><td>' + esc(r.expiry || '—') + '</td><td>' + esc(r.kit) + '</td></tr>').join('') +
+    (records.length > 8 ? '<tr><td colspan="5" class="muted small">+ ' + (records.length - 8) + ' more…</td></tr>' : '') +
+    '</tbody></table></div>' +
+    '<div class="actionsRow" style="margin:14px 0 0">' +
+    '<button class="primaryButton" onclick="confirmCsvImport()">Import ' + records.length + ' items</button>' +
+    '<button class="outlineButton" onclick="pendingImport=null;document.getElementById(\'dialogRoot\').innerHTML=\'\'">Cancel</button>' +
+    '</div></div></div>';
+}
+function confirmCsvImport() {
+  const imp = pendingImport;
+  pendingImport = null;
+  document.getElementById('dialogRoot').innerHTML = '';
+  if (!imp) return;
+  // batch-assign barcodes then persist once
+  const cfg = wh();
+  const stamped = imp.records.map((r, i) => ({
+    ...r,
+    id: cfg.prefix + '-' + pad6(S.items.length + i + 1) + '_' + Date.now(),
+    barcode: cfg.prefix + '-' + pad6(S.items.length + i + 1),
+    tariff: '', cpc: '', notes: 'Imported from ' + imp.filename,
+    lastCheckedAt: '', createdAt: new Date().toISOString(),
+  }));
+  S.items = stamped.concat(S.items);
+  persistItems();
+  recordMovement({
+    type: 'registered', itemId: '', barcode: '(batch)',
+    description: 'Spreadsheet import: ' + stamped.length + ' items',
+    qty: stamped.length, notes: imp.filename,
+  });
+  render();
+}
+function downloadCsvTemplate() {
+  downloadCsv(
+    ['Description', 'Qty', 'Unit Cost', 'Expiry', 'Kit', 'Box', 'Supplier', 'Location', 'Target'],
+    [['Nitrile gloves (100/box)', '12', '6.49', '2027-03-01', 'PPE', 'PPE Box 1', 'Screwfix', 'Row 1 · Bay A', '20']],
+    'import-template.csv');
 }
 
 /* ----- phone scan walkthrough ----- */
@@ -1491,6 +1665,7 @@ function closePhoneDemo() { clearTimeout(phoneTimer); document.getElementById('m
 /* ---------------- boot ---------------- */
 initWarehouse();
 render();
+if (!localStorage.getItem('whdemo_tourSeen')) openTour();
 </script>
 </body>
 </html>
